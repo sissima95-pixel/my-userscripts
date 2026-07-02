@@ -5,6 +5,8 @@
 // @description  自动批量查询ASIN关键词数据并下载
 // @match        https://superset.sds.advertising.amazon.dev/superset/dashboard/2/*
 // @grant        none
+// @updateURL    https://raw.githubusercontent.com/sissima95-pixel/my-userscripts/main/sds_asin_keyword_downloader.user.js
+// @downloadURL  https://raw.githubusercontent.com/sissima95-pixel/my-userscripts/main/sds_asin_keyword_downloader.user.js
 // ==/UserScript==
 
 (function () {
