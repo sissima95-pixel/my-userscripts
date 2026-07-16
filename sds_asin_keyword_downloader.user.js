@@ -5,8 +5,6 @@
 // @description  自动批量查询ASIN关键词数据并下载
 // @match        https://superset.sds.advertising.amazon.dev/superset/dashboard/2/*
 // @grant        none
-// @updateURL    https://raw.githubusercontent.com/sissima95-pixel/my-userscripts/main/sds_asin_keyword_downloader.user.js
-// @downloadURL  https://raw.githubusercontent.com/sissima95-pixel/my-userscripts/main/sds_asin_keyword_downloader.user.js
 // ==/UserScript==
 
 (function () {
@@ -578,67 +576,98 @@
         }
     }
 
+    function getTagCount(section) {
+        const items = section.querySelectorAll('.ant-select-selection-item');
+        let count = 0;
+        for (const item of items) {
+            const text = item.textContent.trim();
+            // "+5 ..." 这种折叠标签表示隐藏了5个，解析出来
+            const overflowMatch = text.match(/^\+\s*(\d+)/);
+            if (overflowMatch) {
+                count += parseInt(overflowMatch[1]);
+            } else if (text && text !== '×') {
+                count++;
+            }
+        }
+        return count;
+    }
+
     async function inputAsinGroup(asinArray) {
         const section = findAsinFilterSection();
         if (!section) throw new Error('找不到 ASIN 筛选区域');
 
-        const selectContainer = section.querySelector('.ant-select') || section.querySelector('[class*="select"]');
-        const input = section.querySelector('input[type="text"], input[type="search"], .ant-select input, input');
-        if (!input) throw new Error('找不到 ASIN 输入框');
+        addLog(`  逐个输入 ${asinArray.length} 个 ASIN...`);
 
         for (let i = 0; i < asinArray.length; i++) {
             const asin = asinArray[i];
-            addLog(`  输入第 ${i + 1}/${asinArray.length} 个: ${asin}`);
+            const countBefore = getTagCount(section);
 
-            if (selectContainer) { selectContainer.click(); await delay(400); }
-            input.focus();
-            await delay(200);
-            setReactInputValue(input, '');
+            // 打开下拉框
+            const sc = section.querySelector('.ant-select') || section.querySelector('[class*="select"]');
+            if (sc) { sc.click(); await delay(300); }
+
+            // 获取 input
+            let inp = section.querySelector('input[type="search"]') ||
+                      section.querySelector('input[type="text"]') ||
+                      section.querySelector('.ant-select input') ||
+                      section.querySelector('input');
+            if (!inp) throw new Error(`找不到 ASIN 输入框 (第 ${i + 1} 个)`);
+
+            inp.focus();
+            await delay(150);
+            setReactInputValue(inp, '');
             await delay(100);
-            setReactInputValue(input, asin);
+            setReactInputValue(inp, asin);
             await delay(500);
 
-            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-            input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-            await delay(800);
+            // Enter 确认
+            inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+            inp.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+            await delay(600);
 
-            const tags = section.querySelectorAll('.ant-select-selection-item, [class*="tag"], [class*="Tag"]');
-            const hasTag = Array.from(tags).some(t => t.textContent.includes(asin));
-
-            if (hasTag) {
+            // 通过 tag 数量增加来判断是否成功（不依赖文本匹配）
+            const countAfter = getTagCount(section);
+            if (countAfter > countBefore) {
+                addLog(`  输入 ${i + 1}/${asinArray.length}: ${asin} ✓`);
                 continue;
             }
 
-            const selected = await findAndClickSelectAll();
+            // 数量没增加，尝试点击下拉选项
+            const selected = await findAndClickDropdownOption(asin);
             if (selected) {
-                await delay(400);
+                await delay(300);
+                addLog(`  输入 ${i + 1}/${asinArray.length}: ${asin} ✓ (下拉)`);
                 continue;
             }
 
-            addLog(`  ${asin} 无 tag，尝试逐字符输入...`);
-            if (selectContainer) { selectContainer.click(); await delay(400); }
-            input.focus();
-            await delay(200);
-            setReactInputValue(input, '');
-            await delay(200);
-            for (let j = 0; j < asin.length; j++) {
-                const char = asin[j];
-                input.dispatchEvent(new KeyboardEvent('keydown', { key: char, bubbles: true }));
-                setReactInputValue(input, asin.substring(0, j + 1));
-                input.dispatchEvent(new KeyboardEvent('keyup', { key: char, bubbles: true }));
-                await delay(50);
+            // 最后尝试 Select All
+            const selectedAll = await findAndClickSelectAll();
+            if (selectedAll) {
+                await delay(300);
+                addLog(`  输入 ${i + 1}/${asinArray.length}: ${asin} ✓ (Select All)`);
+                continue;
             }
-            await delay(1500);
 
-            const retrySelected = await findAndClickSelectAll();
-            if (!retrySelected) {
-                input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-                input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-                await delay(800);
-            } else {
-                await delay(400);
-            }
+            addLog(`  ⚠ ${asin} 可能未成功输入`);
         }
+
+        addLog(`  输入完成: 共 ${getTagCount(section)} 个 tag`);
+    }
+
+    async function findAndClickDropdownOption(asin) {
+        for (let attempt = 0; attempt < 3; attempt++) {
+            const options = document.querySelectorAll('.ant-select-item-option, [role="option"]');
+            for (const opt of options) {
+                if (!isElementVisible(opt)) continue;
+                const title = opt.getAttribute('title') || opt.textContent.trim();
+                if (title === asin) {
+                    opt.click();
+                    return true;
+                }
+            }
+            await delay(300);
+        }
+        return false;
     }
 
     async function findAndClickSelectAll() {
