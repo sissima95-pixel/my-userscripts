@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SDS ASIN Keyword Downloader
 // @namespace    http://tampermonkey.net/
-// @version      1.4
+// @version      1.5
 // @description  自动批量查询ASIN关键词数据并下载
 // @match        https://superset.sds.advertising.amazon.dev/superset/dashboard/2/*
 // @grant        none
